@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:background="@android:color/black"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context=".MainActivity">
+
+    <EditText
+        android:id="@+id/edit"
+        android:layout_width="match_parent"
+        android:layout_height="50dp"
+        android:background="@android:color/white"
+        android:hint="3213215664" />
+
+    <com.example.myapplication.PullView
+        android:id="@+id/scrollView"
+        android:layout_below="@id/edit"
+        android:background="@android:color/white"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+<!--        <include layout="@layout/header" android:layout_marginTop="-200dp"-->
+<!--            android:layout_height="200dp"-->
+<!--            android:layout_width="match_parent" />-->
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/recyclerView"
+            android:fadingEdge="none"
+            android:overScrollMode="never"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"/>
+
+    </com.example.myapplication.PullView>
+
+</RelativeLayout>

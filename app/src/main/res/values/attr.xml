@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+        <!--0 1 2单一属性，分别为上中下，对应head middle foot-->
+    <declare-styleable name="PullView">
+        <attr name="HeaderIndex" format="integer">8</attr>
+        <attr name="MiddleIndex" format="integer">8</attr>
+        <attr name="FooterIndex" format="integer">8</attr>
+    </declare-styleable>
+
+</resources>
