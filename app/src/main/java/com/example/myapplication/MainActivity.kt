@@ -31,11 +31,14 @@ class MainActivity : AppCompatActivity(), TextWatcher {
         val manager = LinearLayoutManager(this)
         recyclerView.layoutManager=manager
         recyclerView.adapter = adapter
+        recyclerView.onFlingListener
+        //val view:ViewGroup = this as ViewGroup
+        //view.dispatchNestedFling()
         adapter.notifyDataSetChanged()
         scrollView.setAnimTime(300)
         scrollView.setDamping(0.6f)
         scrollView.setHeaderAdapter(MyHeader(this,250))
-        scrollView.setFooterAdapter(MyFooter(this,250))
+        scrollView.setFooterAdapter(MyFooter(this,300))
         scrollView.sendToBack()
     }
 

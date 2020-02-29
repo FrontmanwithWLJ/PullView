@@ -41,11 +41,10 @@ class MyHeader(private val context:Context, offset:Int) : PullView.HeaderAdapter
         content.text = "正在刷新"
         GlobalScope.launch {
             delay(2500)
+            Thread {
+                content.text = "加载完成"
+            }.run()
             callBack.over(true)
         }
-    }
-
-    override fun refreshed() {
-        content.text = "更新完成"
     }
 }

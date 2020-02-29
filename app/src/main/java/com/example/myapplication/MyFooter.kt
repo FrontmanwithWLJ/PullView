@@ -30,22 +30,21 @@ class MyFooter(private val context:Context, offset:Int) : PullView.FooterAdapter
     }
 
     override fun pullToLoad() {
-        content.text = "继续下拉刷新"
+        content.text = "继续上拉加载更多"
     }
 
     override fun releaseToLoad() {
-        content.text = "释放刷新"
+        content.text = "释放加载"
     }
 
     override fun loading() {
-        content.text = "正在刷新"
+        content.text = "正在加载"
         GlobalScope.launch {
             delay(2500)
+            Thread {
+                content.text = "加载完成"
+            }.run()
             callBack.over(true)
         }
-    }
-
-    override fun loaded() {
-        content.text = "更新完成"
     }
 }

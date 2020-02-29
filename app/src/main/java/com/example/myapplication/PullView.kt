@@ -3,24 +3,20 @@ package com.example.myapplication
 /**
  * PullView 布局内仅有一个View。headerView和footerView用户设置适配器
  */
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.util.AttributeSet
 import android.util.Log
-import android.view.MotionEvent
-import android.view.View
-import android.view.ViewGroup
-import android.view.animation.Animation
-import android.view.animation.TranslateAnimation
+import android.view.*
 import android.widget.LinearLayout
 import androidx.core.view.get
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlin.math.abs
 
-class PullView : LinearLayout {
+class PullView//不裁剪布局
+@JvmOverloads constructor(context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0) :
+    LinearLayout(context, attrs, defStyleAttr) {
     private val TAG = "PullView"
     //down事件的记录
     private var oldY = 0f
@@ -46,37 +42,40 @@ class PullView : LinearLayout {
     //阻尼系数
     private var damping = 0.5f
     private var dampingTemp = 0.5f
-    private var isDecrement = true     //阻尼系数是否需要逐减
+    //阻尼系数是否需要逐减
+    private var isDecrement = true
+    //第一根手指
+    private var firstFingerId = 0
+    //当前活跃的触控点
+    private var currentActionFingerId = 0
+    //是否切换了手指
+    private var isCheckFinger = false
 
-    private var isRefreshOrLoad = false
     private val refreshCallBack = object : PullCallBack {
         override suspend fun over(success: Boolean) {
-            headerAdapter!!.refreshed()
             delay(300)
             springBack((-headerAdapter!!.offset).toFloat())
-            isRefreshOrLoad = false
+            headerAdapter!!.isRefreshing = false
         }
     }
     private val loadCallBack = object : PullCallBack {
         override suspend fun over(success: Boolean) {
-            footerAdapter!!.loaded()
             delay(300)
             springBack(footerAdapter!!.offset.toFloat())
-            isRefreshOrLoad = false
+            footerAdapter!!.isLoading = false
         }
     }
 
-    @JvmOverloads
-    constructor(
-        context: Context,
-        attrs: AttributeSet? = null,
-        defStyleAttr: Int = 0
-    ) : super(context, attrs, defStyleAttr) {
-        //默认垂直布局
-        (this as LinearLayout).orientation = LinearLayout.VERTICAL
-        //不裁剪布局
+    init {
         this.clipChildren = false
         this.clipToPadding = false
+    }
+
+    private fun onFling(velocityY:Int){
+
+    }
+    override fun dispatchTouchEvent(ev: MotionEvent?): Boolean {
+        return super.dispatchTouchEvent(ev)
     }
 
     //拦截所有消息
@@ -87,48 +86,76 @@ class PullView : LinearLayout {
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent?): Boolean {
         //Log.e(TAG,"get message")
-        when (checkNotNull(event).action) {
+        if (event == null)
+            return true
+        when (event.action and event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                currentActionFingerId = event.getPointerId(event.actionIndex)
+                firstFingerId = currentActionFingerId
                 oldY = event.y
+            }
+            MotionEvent.ACTION_POINTER_DOWN->{
+                currentActionFingerId = event.getPointerId(event.actionIndex)
+                isCheckFinger = true
+                return true
+            }
+            MotionEvent.ACTION_POINTER_UP->{
+                if (firstFingerId == event.getPointerId(event.actionIndex)) {
+                    firstFingerId = currentActionFingerId
+                    return true
+                }
+                currentActionFingerId = firstFingerId
+                oldY = event.getY(event.findPointerIndex(currentActionFingerId))
+                return true
             }
             MotionEvent.ACTION_MOVE -> {
                 //如果满足滑动条件则不共享move事件
-                val offset = oldY - event.y
-                oldY = event.y
+                var index = event.findPointerIndex(currentActionFingerId)
+                while (index == -1){
+                    //没能获取到信息
+                    currentActionFingerId = event.getPointerId(event.actionIndex)
+                    firstFingerId = currentActionFingerId
+                    index = event.findPointerIndex(currentActionFingerId)
+                }
+                val newY = event.getY(index)
+                if (isCheckFinger){
+                    oldY = newY
+                    isCheckFinger = false
+                    return true
+                }
+                val offset = oldY - newY
+                Log.e(TAG,"move =$offset")
+                oldY = newY
                 if (isNeedToIntercept) {
-                    scroll(offset)
+                    onScrolled(offset)
                     return true
                     //canScrollVertically(1)滑动到底部返回false，canScrollVertically(-1)滑动到顶部返回false
                 } else if ((!(middleView.canScrollVertically(-1)) && offset < -2f)
                     || (!(middleView.canScrollVertically(1)) && offset > 2f)
                 ) {
-                    scroll(offset)
+                    onScrolled(offset)
                     isNeedToIntercept = true
                     return true
                 }
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 if (isNeedToIntercept) {//需要拦截，不共享
+                    isNeedToIntercept = false
+                    oldY = 0f
                     if (headerAdapter != null && moveOffset <= -headerAdapter!!.offset) {
                         headerAdapter!!.refreshing()
-                        isRefreshOrLoad = true
+                        headerAdapter!!.isRefreshing = true
                         springBack(moveOffset + headerAdapter!!.offset)
-                        //headerAdapter!!.refreshed()
-                        isNeedToIntercept = false
-                        oldY = 0f
+
                         return true
                     } else if (footerAdapter != null && moveOffset >= footerAdapter!!.offset) {
                         footerAdapter!!.loading()
-                        isRefreshOrLoad = true
+                        footerAdapter!!.isLoading = true
                         springBack(moveOffset - footerAdapter!!.offset)
-                        //footerAdapter!!.loaded()
-                        isNeedToIntercept = false
-                        oldY = 0f
+
                         return true
                     }
                     springBack(moveOffset)
-                    isNeedToIntercept = false
-                    oldY = 0f
                     return true
                 }
             }
@@ -138,35 +165,11 @@ class PullView : LinearLayout {
         return true
     }
 
-    //移动调整header和footer
-    private fun myScrollBy(deltaY: Int) {
-        if (!canScrollVertically(-1)){
-//                middleView.y-=deltaY
-            if (headerView!=null) {
-                val layoutParams = headerView!!.layoutParams as LinearLayout.LayoutParams
-                layoutParams.topMargin -= deltaY
-                GlobalScope.launch(Dispatchers.Main) {
-                    headerView!!.layoutParams = layoutParams
-                }
-            }
-        }else if(!canScrollVertically(1)){
-            //middleView.y-=deltaY
-            if (footerView != null){
-                val layoutParams = footerView!!.layoutParams as LinearLayout.LayoutParams
-                layoutParams.topMargin -= deltaY
-                GlobalScope.launch(Dispatchers.Main) {
-                    footerView!!.layoutParams = layoutParams
-                }
-
-            }
-        }
-    }
-    private fun scroll(deltaY: Float) {
-        if (isRefreshOrLoad) {
+    //对滚动消息初步处理，调整滚动值，更新状态
+    private fun onScrolled(deltaY: Float) {
+        if ((headerAdapter != null && headerAdapter!!.isRefreshing) || (footerAdapter != null && footerAdapter!!.isLoading) ) {
             return
         }
-        //Log.e(TAG,"move offset = $deltaY")
-        //Log.e("sl","scroll =$scrollY max = $maxOverScrollY range=$maxOverScrollY")
         if ((moveOffset < 0f && deltaY > 0) || (moveOffset > 0f && deltaY < 0)) {
             var offset = deltaY * damping
             if (offset < 0 && (-offset > moveOffset)
@@ -174,20 +177,14 @@ class PullView : LinearLayout {
             ) {
                 offset = -moveOffset
             }
-            //y -= offset
-            //layout(left, (top-offset).toInt(),right, (bottom-offset).toInt())
-            myScrollBy(offset.toInt())
-            moveOffset += offset.toInt()
+            scroll(offset.toInt())
         }
         //canScrollVertically(1)滑动到底部返回false，canScrollVertically(-1)滑动到顶部返回false
         else if ((!middleView.canScrollVertically(-1) && deltaY < 0)
             || (!middleView.canScrollVertically(1) && deltaY > 0)
         ) {//下拉和上滑
             val offset = deltaY * dampingTemp
-            //y -= offset
-            //layout(left, (top-offset).toInt(),right, (bottom-offset).toInt())
-            myScrollBy(offset.toInt())
-            moveOffset += offset.toInt()
+            scroll(offset.toInt())
             if (isDecrement) {
                 calcDamping()
             }
@@ -209,6 +206,14 @@ class PullView : LinearLayout {
             else
                 footerAdapter!!.pullToLoad()
         }
+    }
+
+    //滚动视图
+    private fun scroll(deltaY: Int) {
+        if (deltaY == 0) return
+        scrollBy(0,deltaY)
+        moveOffset += deltaY
+        return
     }
 
     fun setDamping(damping: Float, isDecrement: Boolean = true) {
@@ -234,32 +239,14 @@ class PullView : LinearLayout {
 
     //弹回动画
     private fun springBack(offset: Float) {
-        val animation = TranslateAnimation(0f, 0f, -offset,0f)
-        animation.duration = animTime
-        animation.setAnimationListener(object :Animation.AnimationListener{
-            override fun onAnimationRepeat(animation: Animation?) {
-
-            }
-
-            override fun onAnimationEnd(animation: Animation?) {
-            }
-
-            override fun onAnimationStart(animation: Animation?) {
-              //  scrollBy(0, (-offset).toInt())
-//                myScrollBy(-offset.toInt())
-            }
-        })
-        startAnimation(animation)
-        myScrollBy(-offset.toInt())//自定义滚动，和scrollBy一样的效果
-        //这里使用scrollBy会导致图层被切割,屏幕上只有移动过后要显示内容，过渡内容被裁剪
-        //scrollY -= offset.toInt()
-        //scrollBy(0, 0)//设置在动画结束后执行，动画就重复了会闪烁,最后还是接受了闪烁
-        //使用setY（）会导致，整体布局移动，因为之前移动是使用的scrollBy
-//        y += offset
-        //最终采用layout方法调整布局,结果还是有问题，会移动布局
-        //layout(left, (top + offset).toInt(), right, (bottom+offset).toInt())
-        moveOffset -= offset
-        dampingTemp = damping
+        val animator = ValueAnimator.ofInt(0, (-offset).toInt())
+        animator.duration = animTime
+        val oy = scrollY    //当前scrollY
+        animator.addUpdateListener { animation ->
+            scrollTo(scrollX, oy+animation.animatedValue as Int)
+        }
+        post { animator.start() }
+        moveOffset-=offset
     }
 
     fun setHeaderAdapter(adapter: HeaderAdapter) {
@@ -277,7 +264,8 @@ class PullView : LinearLayout {
         addView(headerView, 0)//最底层
         headerView!!.post {
             val height = headerView!!.measuredHeight
-            val layoutParams = LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, height)
+            val layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, height)
+            //使其位于布局范围之外
             layoutParams.topMargin = -height
             headerView!!.layoutParams = layoutParams
         }
@@ -289,6 +277,7 @@ class PullView : LinearLayout {
         addFooterView(footerAdapter!!.getFooterView(this))
     }
 
+    //相比于HeaderView，footerView处于middleView的最后，无须设置marginTop
     private fun addFooterView(view: View) {
         if (childCount == 3) {
             Log.e(TAG, "only support three views")
@@ -296,13 +285,6 @@ class PullView : LinearLayout {
         }
         footerView = view
         addView(footerView, 2)
-        footerView!!.post {
-            val height = footerView!!.measuredHeight
-            val layoutParams =
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, height)
-            layoutParams.bottomMargin = -height
-            footerView!!.layoutParams = layoutParams
-        }
     }
 
     //将自身置于底层
@@ -325,7 +307,11 @@ class PullView : LinearLayout {
     }
 
     abstract class HeaderAdapter(var offset: Int) {
+        var isRefreshing = false
         abstract fun getHeaderView(viewGroup: ViewGroup): View
+        /**
+         * @param progress in 0 .. offset
+         */
         abstract fun scrollProgress(progress: Int)
         abstract fun setPullCallBack(callBack: PullCallBack)
         //下拉刷新
@@ -336,13 +322,14 @@ class PullView : LinearLayout {
 
         //刷新中
         abstract fun refreshing()
-
-        //刷新完成
-        abstract fun refreshed()
     }
 
     abstract class FooterAdapter(var offset: Int) {
+        var isLoading = false
         abstract fun getFooterView(viewGroup: ViewGroup): View
+        /**
+        * @param progress in 0 .. offset
+        */
         abstract fun scrollProgress(progress: Int)
         abstract fun setPullCallBack(callBack: PullCallBack)
         //上拉加载
@@ -353,9 +340,6 @@ class PullView : LinearLayout {
 
         //加载中
         abstract fun loading()
-
-        //加载完成
-        abstract fun loaded()
     }
 
     interface PullCallBack {
